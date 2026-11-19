@@ -1,6 +1,6 @@
 # Tactix Gridfinity Generator
 
-<img src="assets/organiser-photo.jpg" alt="Tactix / R-Van 9-compartment organiser" width="320" align="right">
+<p align="center"><img src="assets/organiser-photo.jpg" alt="Tactix / R-Van 9-compartment organiser" width="360"></p>
 
 A browser tool that builds 3D-printable [Gridfinity](https://www.youtube.com/watch?v=ra_9zU-mnl8) bins and baseplates sized for the **Tactix 9-compartment organiser**. The same case is also sold as the **R-Van 9-compartment organiser**.
 
