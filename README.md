@@ -61,7 +61,6 @@ Edit the **USER SETTINGS** block at the top of the `<script>` section in `Tactix
 | `support.js` | Page runtime. Generated, do not edit. |
 | `assets/` | Organiser images. |
 
-## Credits & licence
+## Licence
 
-- Gridfinity was created by Zack Freedman and is released under the MIT licence.
-- This project is released under the [MIT licence](LICENSE).
+This project is released under the [MIT licence](LICENSE).
