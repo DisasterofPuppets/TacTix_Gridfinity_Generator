@@ -1,0 +1,14 @@
+# --- Windows / macOS clutter --------------------------------------------------
+desktop.ini
+Thumbs.db
+ehthumbs.db
+$RECYCLE.BIN/
+.DS_Store
+._*
+
+# --- Editor / tooling ---------------------------------------------------------
+.vscode/
+__pycache__/
+*.py[cod]
+.venv/
+venv/

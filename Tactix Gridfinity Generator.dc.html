@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<!--
+==============================================================================
+ Tactix Gridfinity Generator
+ Purpose : Browser tool that builds Gridfinity bins and baseplates sized for the
+           Tactix (also sold as R-Van) 9-compartment organiser, previews them in
+           3D and exports STL / 3MF files for 3D printing.
+ Prereqs : - A modern browser (Chrome, Edge, Firefox, Safari) with WebGL.
+           - Internet access on first load for the CDN libraries below.
+           - support.js (Claude Design runtime) in the same folder.
+           - assets/organiser.png (header image).
+ Libraries (loaded automatically, nothing to install):
+           - React 18.3.1 + ReactDOM (unpkg, via support.js)
+           - Three.js r128 + OrbitControls (jsDelivr)
+           - JetBrains Mono (Google Fonts)
+ Defaults: Edit the USER SETTINGS block at the top of the <script> section.
+==============================================================================
+-->
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+<link rel="icon" href="./assets/favicon.ico" sizes="16x16 32x32 48x48 64x64">
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<style>
+  html, body { margin:0; padding:0; background:#15171b; }
+  * { box-sizing:border-box; }
+  a { color:#e8a34a; text-decoration:none; }
+  a:hover { color:#f5c27a; }
+  /* --- Sliders: amber fill up to the thumb (--pct), light grey remainder --- */
+  input[type=range]{ -webkit-appearance:none; appearance:none; background:transparent; width:100%; cursor:pointer; }
+  input[type=range]::-webkit-slider-runnable-track{ height:5px; border-radius:3px; background:linear-gradient(to right, #e8a34a var(--pct, 0%), #6b7480 var(--pct, 0%)); }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:15px; height:15px; margin-top:-5px; border-radius:50%; background:#f5c27a; border:2px solid #1b1e23; box-shadow:0 0 0 1px #e8a34a; }
+  input[type=range]::-moz-range-track{ height:5px; border-radius:3px; background:#6b7480; }
+  input[type=range]::-moz-range-progress{ height:5px; border-radius:3px; background:#e8a34a; }
+  input[type=range]::-moz-range-thumb{ width:13px; height:13px; border-radius:50%; background:#f5c27a; border:2px solid #1b1e23; box-shadow:0 0 0 1px #e8a34a; }
+  input[type=range]:focus-visible{ outline:1px dashed #e8a34a; outline-offset:4px; }
+  /* --- Number boxes paired with sliders --- */
+  input[type=number]{ -moz-appearance:textfield; }
+  input[type=number]:focus{ outline:none; border-color:#e8a34a !important; }
+  ::-webkit-scrollbar{ width:9px; }
+  ::-webkit-scrollbar-thumb{ background:#2e333a; border-radius:5px; }
+</style>
+</helmet>
+<div style="display:flex; height:100vh; width:100%; background:#15171b; color:#dfe3e8; font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; overflow:hidden">
+
+  <div style="width:352px; min-width:352px; height:100%; display:flex; flex-direction:column; background:#1b1e23; border-right:1px solid #282d34">
+
+    <!-- Header: organiser photo (top left) + title -->
+    <div style="padding:16px 22px 14px; border-bottom:1px solid #282d34; display:flex; align-items:center; gap:14px">
+      <img src="./assets/organiser.png" alt="Tactix / R-Van 9-compartment organiser" width="92" height="62" style="flex:none; width:92px; height:auto; object-fit:contain">
+      <div style="display:flex; flex-direction:column; gap:4px; min-width:0">
+        <div style="display:flex; align-items:baseline; gap:9px">
+          <div style="font-size:19px; font-weight:700; letter-spacing:-0.4px">Tactix Gridfinity</div>
+          <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:#6d757f; letter-spacing:0.06em">42MM GRID</div>
+        </div>
+        <div style="font-size:12px; color:#7d858f; line-height:1.45">Bins for the Tactix / R-Van 9-compartment organiser. Height in real millimetres.</div>
+      </div>
+    </div>
+
+    <div style="flex:1; overflow-y:auto; padding:18px 22px 26px; display:flex; flex-direction:column; gap:22px">
+
+      <div style="display:flex; flex-direction:column; gap:9px">
+        <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.12em; color:#6d757f">PART</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px">
+          <button onClick="{{ setModeBin }}" style="padding:9px 0; border:1px solid #313740; border-radius:5px; font-size:12.5px; font-family:inherit; cursor:pointer; background:{{ modeBg.bin }}; color:{{ modeFg.bin }}">Bin</button>
+          <button onClick="{{ setModePlate }}" style="padding:9px 0; border:1px solid #313740; border-radius:5px; font-size:12.5px; font-family:inherit; cursor:pointer; background:{{ modeBg.plate }}; color:{{ modeFg.plate }}">Baseplate</button>
+        </div>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:11px">
+        <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.12em; color:#6d757f">FOOTPRINT</div>
+        <sc-if value="{{ isBin }}" hint-placeholder-val="{{ true }}">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px">
+          <div style="display:flex; flex-direction:column; gap:6px">
+            <div style="display:flex; justify-content:space-between; align-items:center">
+              <span style="font-size:12px; color:#a8b0b9">Width</span>
+              <div style="display:flex; align-items:center; gap:4px">
+                <input type="number" min="1" max="{{ maxUnits }}" step="1" value="{{ f.nx.value }}" onChange="{{ f.nx.edit }}" onBlur="{{ f.nx.commit }}" onKeyDown="{{ f.nx.key }}" aria-label="Width in grid units" style="width:52px; padding:3px 6px; background:#15171b; border:1px solid #3a3f47; border-radius:4px; color:#f2d9b0; font-family:'JetBrains Mono',monospace; font-size:12px; text-align:right">
+                <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:#7d858f">u</span>
+              </div>
+            </div>
+            <input type="range" min="1" max="{{ maxUnits }}" step="1" value="{{ nx }}" onChange="{{ onNx }}" aria-label="Width slider" style="height:14px; --pct:{{ pct.nx }}">
+          </div>
+          <div style="display:flex; flex-direction:column; gap:6px">
+            <div style="display:flex; justify-content:space-between; align-items:center">
+              <span style="font-size:12px; color:#a8b0b9">Depth</span>
+              <div style="display:flex; align-items:center; gap:4px">
+                <input type="number" min="1" max="{{ maxUnits }}" step="1" value="{{ f.ny.value }}" onChange="{{ f.ny.edit }}" onBlur="{{ f.ny.commit }}" onKeyDown="{{ f.ny.key }}" aria-label="Depth in grid units" style="width:52px; padding:3px 6px; background:#15171b; border:1px solid #3a3f47; border-radius:4px; color:#f2d9b0; font-family:'JetBrains Mono',monospace; font-size:12px; text-align:right">
+                <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:#7d858f">u</span>
+              </div>
+            </div>
+            <input type="range" min="1" max="{{ maxUnits }}" step="1" value="{{ ny }}" onChange="{{ onNy }}" aria-label="Depth slider" style="height:14px; --pct:{{ pct.ny }}">
+          </div>
+        </div>
+        </sc-if>
+        <sc-if value="{{ isPlate }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px">
+          <div style="display:flex; flex-direction:column; gap:6px">
+            <span style="font-size:12px; color:#a8b0b9">Width</span>
+            <div style="display:flex; align-items:center; gap:7px">
+              <input type="number" min="1" max="64" step="1" value="{{ f.px.value }}" onChange="{{ f.px.edit }}" onBlur="{{ f.px.commit }}" onKeyDown="{{ f.px.key }}" aria-label="Baseplate width in grid units" style="width:100%; padding:8px 9px; background:#15171b; border:1px solid #3a3f47; border-radius:5px; color:#f2d9b0; font-family:'JetBrains Mono',monospace; font-size:14px">
+              <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:#7d858f">u</span>
+            </div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:6px">
+            <span style="font-size:12px; color:#a8b0b9">Depth</span>
+            <div style="display:flex; align-items:center; gap:7px">
+              <input type="number" min="1" max="64" step="1" value="{{ f.py.value }}" onChange="{{ f.py.edit }}" onBlur="{{ f.py.commit }}" onKeyDown="{{ f.py.key }}" aria-label="Baseplate depth in grid units" style="width:100%; padding:8px 9px; background:#15171b; border:1px solid #3a3f47; border-radius:5px; color:#f2d9b0; font-family:'JetBrains Mono',monospace; font-size:14px">
+              <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:#7d858f">u</span>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+        <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#6d757f">{{ footprintMm }}</div>
+      </div>
+
+      <sc-if value="{{ isBin }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex; flex-direction:column; gap:22px">
+
+        <div style="display:flex; flex-direction:column; gap:10px; padding:14px; border:1px solid #34302a; background:#20211f; border-radius:7px">
+          <div style="display:flex; justify-content:space-between; align-items:baseline">
+            <span style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.12em; color:#c08c42">TOTAL HEIGHT</span>
+            <span style="font-family:'JetBrains Mono',monospace; font-size:10px; color:#6d757f">{{ heightUnits }}</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px">
+            <input type="number" min="8" max="200" step="0.0001" value="{{ f.h.value }}" onChange="{{ f.h.edit }}" onBlur="{{ f.h.commit }}" onKeyDown="{{ f.h.key }}" aria-label="Total height in millimetres" style="width:124px; padding:8px 10px; background:#15171b; border:1px solid #3a3f47; border-radius:5px; color:#f2d9b0; font-family:'JetBrains Mono',monospace; font-size:15px">
+            <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:#7d858f">mm</span>
+          </div>
+          <input type="range" min="8" max="150" step="0.1" value="{{ h }}" onChange="{{ onH }}" aria-label="Total height slider" style="height:14px; --pct:{{ pct.h }}">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px">
+            <button onClick="{{ snapHalf }}" style="padding:7px 8px; border:1px solid #313740; background:{{ tacBg.half }}; color:{{ tacFg.half }}; border-radius:5px; font-family:'JetBrains Mono',monospace; font-size:10.5px; cursor:pointer; text-align:left; line-height:1.35">Tactix half<br>49.37 mm</button>
+            <button onClick="{{ snapFull }}" style="padding:7px 8px; border:1px solid #313740; background:{{ tacBg.full }}; color:{{ tacFg.full }}; border-radius:5px; font-family:'JetBrains Mono',monospace; font-size:10.5px; cursor:pointer; text-align:left; line-height:1.35">Tactix full<br>94.00 mm</button>
+          </div>
+          <div style="font-size:11.5px; color:#7d858f; line-height:1.5">Measured floor to rim.</div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:7px">
+          <div style="display:flex; justify-content:space-between; align-items:center">
+            <span style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.12em; color:#6d757f">WALL</span>
+            <div style="display:flex; align-items:center; gap:4px">
+              <input type="number" min="0.6" max="3" step="0.05" value="{{ f.wall.value }}" onChange="{{ f.wall.edit }}" onBlur="{{ f.wall.commit }}" onKeyDown="{{ f.wall.key }}" aria-label="Wall thickness in millimetres" style="width:62px; padding:3px 6px; background:#15171b; border:1px solid #3a3f47; border-radius:4px; color:#f2d9b0; font-family:'JetBrains Mono',monospace; font-size:12px; text-align:right">
+              <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:#7d858f">mm</span>
+            </div>
+          </div>
+          <input type="range" min="0.6" max="3" step="0.05" value="{{ wall }}" onChange="{{ onWall }}" aria-label="Wall thickness slider" style="height:14px; --pct:{{ pct.wall }}">
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:12px">
+          <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.12em; color:#6d757f">INSIDE</div>
+
+          <div onClick="{{ toggleFloor }}" style="display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer">
+            <div style="display:flex; flex-direction:column; gap:2px">
+              <span style="font-size:12.5px; color:#c9d0d8">Thin floor</span>
+              <span style="font-size:11px; color:#6d757f">Maximum depth, less mass</span>
+            </div>
+            <div style="width:36px; height:20px; border-radius:11px; padding:2px; flex:none; background:{{ floorTrack }}">
+              <div style="width:16px; height:16px; border-radius:50%; background:#f0f2f4; transform:{{ floorKnob }}; transition:transform .15s"></div>
+            </div>
+          </div>
+
+          <div onClick="{{ toggleLip }}" style="display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer">
+            <div style="display:flex; flex-direction:column; gap:2px">
+              <span style="font-size:12.5px; color:#c9d0d8">Stacking lip</span>
+              <span style="font-size:11px; color:#6d757f">Recessed rim so bins stack</span>
+            </div>
+            <div style="width:36px; height:20px; border-radius:11px; padding:2px; flex:none; background:{{ lipTrack }}">
+              <div style="width:16px; height:16px; border-radius:50%; background:#f0f2f4; transform:{{ lipKnob }}; transition:transform .15s"></div>
+            </div>
+          </div>
+
+          <div onClick="{{ toggleScoop }}" style="display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer">
+            <div style="display:flex; flex-direction:column; gap:2px">
+              <span style="font-size:12.5px; color:#c9d0d8">Front ramp</span>
+              <span style="font-size:11px; color:#6d757f">Sweeps parts toward your fingers</span>
+            </div>
+            <div style="width:36px; height:20px; border-radius:11px; padding:2px; flex:none; background:{{ scoopTrack }}">
+              <div style="width:16px; height:16px; border-radius:50%; background:#f0f2f4; transform:{{ scoopKnob }}; transition:transform .15s"></div>
+            </div>
+          </div>
+
+          <div onClick="{{ toggleLabel }}" style="display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer">
+            <div style="display:flex; flex-direction:column; gap:2px">
+              <span style="font-size:12.5px; color:#c9d0d8">Label shelf</span>
+              <span style="font-size:11px; color:#6d757f">Full-width tab across the back</span>
+            </div>
+            <div style="width:36px; height:20px; border-radius:11px; padding:2px; flex:none; background:{{ labelTrack }}">
+              <div style="width:16px; height:16px; border-radius:50%; background:#f0f2f4; transform:{{ labelKnob }}; transition:transform .15s"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      </sc-if>
+
+      <div style="display:flex; flex-direction:column; gap:9px">
+        <div style="display:flex; justify-content:space-between; align-items:center">
+          <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.12em; color:#6d757f">SAVED</div>
+          <button onClick="{{ savePreset }}" style="padding:4px 9px; border:1px solid #313740; background:#22262c; color:#c9d0d8; border-radius:4px; font-size:11px; font-family:inherit; cursor:pointer">Save current</button>
+        </div>
+        <sc-if value="{{ hasPresets }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; flex-direction:column; gap:4px">
+            <sc-for list="{{ presets }}" as="p" hint-placeholder-count="2">
+              <div style="display:flex; align-items:center; gap:6px; padding:7px 9px; background:#20242a; border:1px solid #2a2f36; border-radius:5px">
+                <button onClick="{{ p.load }}" style="flex:1; text-align:left; background:none; border:none; color:#c9d0d8; font-family:'JetBrains Mono',monospace; font-size:11px; cursor:pointer; padding:0">{{ p.name }}</button>
+                <button onClick="{{ p.remove }}" style="background:none; border:none; color:#5f666e; font-size:14px; line-height:1; cursor:pointer; padding:0 2px">×</button>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{ noPresets }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:11.5px; color:#5f666e">Nothing saved yet.</div>
+        </sc-if>
+      </div>
+
+    </div>
+  </div>
+
+  <div style="flex:1; display:flex; flex-direction:column; min-width:0">
+    <div style="height:56px; flex:none; display:flex; align-items:center; justify-content:space-between; padding:0 20px; border-bottom:1px solid #282d34; background:#1b1e23">
+      <div style="display:flex; align-items:center; gap:14px; min-width:0; overflow:hidden">
+        <button onClick="{{ fitView }}" style="flex:none; white-space:nowrap; padding:7px 12px; border:1px solid #313740; background:#22262c; color:#c9d0d8; border-radius:5px; font-size:12px; font-family:inherit; cursor:pointer">Recentre</button>
+        <button onClick="{{ clearAll }}" title="Reset every setting to its default" style="flex:none; white-space:nowrap; padding:7px 12px; border:1px solid #5a3a2c; background:#2a2220; color:#e6a58a; border-radius:5px; font-size:12px; font-family:inherit; cursor:pointer">Clear All</button>
+        <div style="flex:none; white-space:nowrap; font-family:'JetBrains Mono',monospace; font-size:11px; color:#6d757f">{{ status }}</div>
+        <div style="min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:11px; color:#565d66">drag to rotate · right-drag to pan · scroll to zoom</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px; flex:none">
+        <button onClick="{{ copyLink }}" title="Copies a link to this exact setup. Opening the link loads your current settings instead of the defaults." style="flex:none; white-space:nowrap; padding:8px 13px; border:1px solid #313740; background:#22262c; color:#c9d0d8; border-radius:5px; font-size:12.5px; font-family:inherit; cursor:pointer">{{ linkLabel }}</button>
+        <button onClick="{{ export3mf }}" style="flex:none; white-space:nowrap; padding:8px 13px; border:1px solid #313740; background:#22262c; color:#c9d0d8; border-radius:5px; font-size:12.5px; font-family:inherit; cursor:pointer">3MF</button>
+        <button onClick="{{ exportStl }}" style="flex:none; white-space:nowrap; padding:8px 17px; border:1px solid #e8a34a; background:#e8a34a; color:#1a1508; border-radius:5px; font-size:12.5px; font-weight:700; font-family:inherit; cursor:pointer">Download STL</button>
+      </div>
+    </div>
+
+    <div style="flex:1; position:relative; min-height:0">
+      <div ref="{{ mountRef }}" style="position:absolute; inset:0"></div>
+      <div style="position:absolute; left:20px; bottom:18px; max-width:calc(100% - 40px); display:flex; flex-wrap:wrap; gap:12px 26px; padding:13px 18px; background:rgba(21,23,27,0.82); border:1px solid #282d34; border-radius:7px; backdrop-filter:blur(6px); pointer-events:none">
+        <div style="display:flex; flex-direction:column; gap:3px">
+          <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; color:#6d757f">OUTSIDE</div>
+          <div style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#dfe3e8">{{ dimOuter }}</div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:3px">
+          <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; color:#6d757f">USABLE DEPTH</div>
+          <div style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#dfe3e8">{{ dimInner }}</div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:3px">
+          <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; color:#6d757f">CAPACITY</div>
+          <div style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#dfe3e8">{{ dimVol }}</div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:3px">
+          <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; color:#6d757f">PLA</div>
+          <div style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#e8a34a">{{ dimMass }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:820},&quot;modelColor&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#e8a34a&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#d8dde3&quot;,&quot;#e8a34a&quot;,&quot;#5ec8b4&quot;,&quot;#2b2f36&quot;],&quot;section&quot;:&quot;Viewer&quot;},&quot;showGrid&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Viewer&quot;},&quot;maxUnits&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:100,&quot;min&quot;:2,&quot;max&quot;:16,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Limits&quot;}}">
+// ##############################################################################
+// ##  USER SETTINGS - change these to set what the page opens with and what   ##
+// ##  "Clear All" resets to. Units: grid units (u, 42 mm) or millimetres.      ##
+// ##  Tactix heights were measured floor to rim on the real organiser.          ##
+// ##############################################################################
+const DEFAULTS = {
+  mode: 'bin',        // 'bin' or 'plate'
+  nx: 1, ny: 1,       // bin footprint (u)
+  px: 5, py: 6,       // baseplate footprint (u)
+  h: 44,              // bin total height (mm)
+  wall: 0.95,         // wall thickness (mm)
+  lip: 'none',        // 'none' or 'normal' (stacking lip)
+  efficient: true,    // true = thin floor
+  scoop: false,       // front ramp
+  label: 'off'        // 'off' or 'center' (label shelf)
+};
+const TACTIX_HALF_MM = 49.3749, TACTIX_FULL_MM = 94;
+// "Copy link" always shares this address + your settings, even when run locally.
+// Get it from your repo: Settings > Pages ("Your site is live at ..."). Keep the trailing /.
+const SHARE_BASE_URL = 'https://disasterofpuppets.github.io/TacTix_Gridfinity_Generator/';
+// ##############################################################################
+
+// Number-box limits; must match the min/max on the matching slider in the template.
+// max:null = use the maxUnits prop.
+const FIELDS = {
+  nx:   { min: 1,   max: null, int: true,  fit: true },
+  ny:   { min: 1,   max: null, int: true,  fit: true },
+  px:   { min: 1,   max: 64,   int: true,  fit: true },
+  py:   { min: 1,   max: 64,   int: true,  fit: true },
+  h:    { min: 8,   max: 200,  int: false, fit: false, slider: 150 },
+  wall: { min: 0.6, max: 3,    int: false, fit: false }
+};
+
+const G = 42, CLR = 0.5272, BH = 4.75, RT = 4.0, SEG = 8;
+const FLOOR_THIN = 0.9, FLOOR_SOLID = 2.4, LABEL_D = 12.8, LABEL_DROP = 3.76;
+
+function ring(cx, cy, hx, hy, r) {
+  const pts = [];
+  r = Math.max(0.01, Math.min(r, Math.min(hx, hy) - 0.001));
+  const ax = hx - r, ay = hy - r;
+  const cs = [[cx + ax, cy + ay, 0], [cx - ax, cy + ay, Math.PI / 2], [cx - ax, cy - ay, Math.PI], [cx + ax, cy - ay, Math.PI * 1.5]];
+  for (const c of cs) for (let i = 0; i <= SEG; i++) {
+    const a = c[2] + (Math.PI / 2) * (i / SEG);
+    pts.push([c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)]);
+  }
+  return pts;
+}
+function band(T, A, zA, B, zB, flip) {
+  const n = A.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const a = [A[i][0], A[i][1], zA], b = [A[j][0], A[j][1], zA], c = [B[j][0], B[j][1], zB], d = [B[i][0], B[i][1], zB];
+    if (flip) { T.push([a, c, b], [a, d, c]); } else { T.push([a, b, c], [a, c, d]); }
+  }
+}
+function annulus(T, O, I, z, up) {
+  const n = O.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const o1 = [O[i][0], O[i][1], z], o2 = [O[j][0], O[j][1], z], i1 = [I[i][0], I[i][1], z], i2 = [I[j][0], I[j][1], z];
+    if (up) { T.push([o1, o2, i2], [o1, i2, i1]); } else { T.push([o1, i2, o2], [o1, i1, i2]); }
+  }
+}
+function cap(T, R, z, up) {
+  let sx = 0, sy = 0;
+  for (const p of R) { sx += p[0]; sy += p[1]; }
+  const c = [sx / R.length, sy / R.length, z];
+  for (let i = 0; i < R.length; i++) {
+    const j = (i + 1) % R.length;
+    const a = [R[i][0], R[i][1], z], b = [R[j][0], R[j][1], z];
+    if (up) T.push([c, a, b]); else T.push([c, b, a]);
+  }
+}
+// loft a series of (y,z) cross-sections along X, with end caps
+function loftX(T, secs) {
+  const M = secs[0].poly.length;
+  for (let s = 0; s < secs.length - 1; s++) {
+    const A = secs[s], B = secs[s + 1];
+    for (let i = 0; i < M; i++) {
+      const j = (i + 1) % M;
+      T.push([[A.x, A.poly[i][0], A.poly[i][1]], [A.x, A.poly[j][0], A.poly[j][1]], [B.x, B.poly[j][0], B.poly[j][1]]]);
+      T.push([[A.x, A.poly[i][0], A.poly[i][1]], [B.x, B.poly[j][0], B.poly[j][1]], [B.x, B.poly[i][0], B.poly[i][1]]]);
+    }
+  }
+  const capOne = (S, x, fwd) => {
+    let cy = 0, cz = 0;
+    S.forEach(p => { cy += p[0]; cz += p[1]; });
+    cy /= S.length; cz /= S.length;
+    for (let i = 0; i < S.length; i++) {
+      const j = (i + 1) % S.length;
+      if (fwd) T.push([[x, cy, cz], [x, S[i][0], S[i][1]], [x, S[j][0], S[j][1]]]);
+      else T.push([[x, cy, cz], [x, S[j][0], S[j][1]], [x, S[i][0], S[i][1]]]);
+    }
+  };
+  capOne(secs[secs.length - 1].poly, secs[secs.length - 1].x, true);
+  capOne(secs[0].poly, secs[0].x, false);
+}
+// how far the rounded cavity wall pulls back at a given x
+function wallY(x, ix, iy, r) {
+  const d = Math.abs(x) - (ix - r);
+  return d > 0 ? (iy - r) + Math.sqrt(Math.max(0, r * r - d * d)) : iy;
+}
+// x sample positions, extra-dense inside the corner arcs so the loft hugs the wall
+function xSamples(x0, x1, ix, r) {
+  const set = [];
+  const push = v => { if (v >= x0 - 1e-6 && v <= x1 + 1e-6) set.push(Math.min(x1, Math.max(x0, v))); };
+  for (let s = 0; s <= 16; s++) push(x0 + (x1 - x0) * (s / 16));
+  for (const sign of [-1, 1]) for (let s = 0; s <= 14; s++) push(sign * (ix - r + r * (s / 14)));
+  set.sort((a, b) => a - b);
+  return set.filter((v, i) => i === 0 || v - set[i - 1] > 1e-5);
+}
+function ccw(poly) {
+  let s = 0;
+  for (let i = 0; i < poly.length; i++) { const j = (i + 1) % poly.length; s += poly[i][0] * poly[j][1] - poly[j][0] * poly[i][1]; }
+  return s < 0 ? poly.slice().reverse() : poly;
+}
+function prismX(T, poly, x0, x1) {
+  const P = ccw(poly), n = P.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const A = [x0, P[i][0], P[i][1]], B = [x0, P[j][0], P[j][1]], C = [x1, P[j][0], P[j][1]], D = [x1, P[i][0], P[i][1]];
+    T.push([A, B, C], [A, C, D]);
+  }
+  let sy = 0, sz = 0;
+  for (const p of P) { sy += p[0]; sz += p[1]; }
+  const cy = sy / n, cz = sz / n;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    T.push([[x1, cy, cz], [x1, P[i][0], P[i][1]], [x1, P[j][0], P[j][1]]]);
+    T.push([[x0, cy, cz], [x0, P[j][0], P[j][1]], [x0, P[i][0], P[i][1]]]);
+  }
+}
+
+// sharp-cornered rect sharing ring()'s point ordering/count, so cells seam exactly
+function ringSharp(cx, cy, hx, hy) {
+  const pts = [], cs = [[cx + hx, cy + hy], [cx - hx, cy + hy], [cx - hx, cy - hy], [cx + hx, cy - hy]];
+  for (const c of cs) for (let i = 0; i <= SEG; i++) pts.push([c[0], c[1]]);
+  return pts;
+}
+function dropDegenerate(T) {
+  return T.filter(function (t) {
+    const a = t[0], b = t[1], c = t[2];
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+    const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    return nx * nx + ny * ny + nz * nz > 1e-12;
+  });
+}
+
+// (z, inset) profile of a gridfinity foot, bottom -> top
+const FOOT = [[0, 2.95], [0.8, 2.15], [2.6, 2.15], [4.75, 0]];
+
+function buildBin(p) {
+  const T = [];
+  const hx = (G * p.nx - CLR) / 2, hy = (G * p.ny - CLR) / 2;
+  const single = p.nx === 1 && p.ny === 1;
+  const H = p.h;
+  const floorTop = BH + (p.efficient ? FLOOR_THIN : FLOOR_SOLID);
+  const wall = p.wall;
+
+  // ---- feet ----
+  if (single) {
+    let prev = null;
+    for (const f of FOOT) {
+      const R = ring(0, 0, hx - f[1], hy - f[1], RT - f[1]);
+      if (prev) band(T, prev.R, prev.z, R, f[0], false); else cap(T, R, 0, false);
+      prev = { R: R, z: f[0] };
+    }
+    var bodyBottom = prev;
+  } else {
+    for (let ix = 0; ix < p.nx; ix++) for (let iy = 0; iy < p.ny; iy++) {
+      const cx = (ix - (p.nx - 1) / 2) * G, cy = (iy - (p.ny - 1) / 2) * G;
+      const ph = (G - CLR) / 2;
+      let prev = null;
+      for (const f of FOOT) {
+        const R = ring(cx, cy, ph - f[1], ph - f[1], RT - f[1]);
+        if (prev) band(T, prev.R, prev.z, R, f[0], false); else cap(T, R, 0, false);
+        prev = { R: R, z: f[0] };
+      }
+      const top = ring(cx, cy, ph, ph, RT);
+      band(T, prev.R, prev.z, top, BH + 0.8, false);
+      cap(T, top, BH + 0.8, true);
+    }
+    const R = ring(0, 0, hx, hy, RT);
+    cap(T, R, BH, false);
+    var bodyBottom = { R: R, z: BH };
+  }
+
+  // ---- outer wall ----
+  const outTop = ring(0, 0, hx, hy, RT);
+  band(T, bodyBottom.R, bodyBottom.z, outTop, H, false);
+
+  // ---- inner profile, top -> down (drop from H, inset) ----
+  let prof;
+  if (p.lip === 'normal') prof = [[0, 0.35], [1.55, 1.9], [3.35, 1.9], [4.05, 2.6]];
+  else if (p.lip === 'reduced') prof = [[0, 0.35], [1.55, 1.9], [2.25, 2.6]];
+  else prof = [[0, wall]];
+  const last = prof[prof.length - 1];
+  if (p.lip !== 'none') {
+    if (wall < last[1]) prof.push([last[0] + (last[1] - wall), wall]);
+    else prof.push([last[0], wall]);
+  }
+  const lipDrop = prof[prof.length - 1][0];
+
+  annulus(T, outTop, ring(0, 0, hx - prof[0][1], hy - prof[0][1], RT - prof[0][1]), H, true);
+  let prev = null;
+  for (const q of prof) {
+    const R = ring(0, 0, hx - q[1], hy - q[1], Math.max(0.4, RT - q[1]));
+    if (prev) band(T, R, H - q[0], prev.R, prev.z, true);
+    prev = { R: R, z: H - q[0] };
+  }
+  const inFloor = ring(0, 0, hx - wall, hy - wall, Math.max(0.4, RT - wall));
+  band(T, inFloor, floorTop, prev.R, prev.z, true);
+  cap(T, inFloor, floorTop, true);
+
+  const ix = hx - wall, iy = hy - wall;
+
+  // ---- front ramp ----
+  const rIn = Math.max(0.3, RT - wall);
+  if (p.scoop) {
+    const R = Math.min(p.scoopR, iy * 1.6, (H - lipDrop - floorTop) * 0.95);
+    if (R > 1) {
+      const secs = [];
+      for (const x of xSamples(-ix, ix, ix, rIn)) {
+        const yf = wallY(x, ix, iy, rIn);
+        const poly = [[yf, floorTop]];
+        for (let i = SEG * 3; i >= 0; i--) {
+          const a = -Math.PI / 2 + (Math.PI / 2) * (i / (SEG * 3));
+          poly.push([yf - R + R * Math.cos(a), floorTop + R + R * Math.sin(a)]);
+        }
+        secs.push({ x: x, poly: ccw(poly) });
+      }
+      loftX(T, secs);
+    }
+  }
+
+  // ---- label shelf ----
+  if (p.label !== 'off') {
+    // sit flush under the lip: back face on the lip socket, top at the socket floor
+    const socketDrop = p.lip === 'normal' ? 4.05 : p.lip === 'reduced' ? 2.25 : 0;
+    const backInset = p.lip === 'none' ? wall : Math.max(wall, 2.6);
+    const yb = hy - backInset;
+    const zTop = H - (socketDrop || LABEL_DROP);
+    const d = Math.min(p.labelD, iy * 1.5);
+    const frontY = -yb + d;
+    let w = (p.label === 'full' || p.label === 'center') ? ix * 2 : Math.min(p.labelW, ix * 2);
+    let x0, x1;
+    if (p.label === 'left') { x0 = -ix; x1 = -ix + w; }
+    else if (p.label === 'right') { x0 = ix - w; x1 = ix; }
+    else { x0 = -w / 2; x1 = w / 2; }
+    const secs = [];
+    for (const x of xSamples(x0, x1, ix, rIn)) {
+      const back = -Math.min(yb, wallY(x, ix, yb, rIn));
+      secs.push({ x: x, poly: ccw([[back, zTop], [frontY, zTop], [frontY, zTop - 1.0], [back, zTop - 1.0 - (frontY - back)]]) });
+    }
+    loftX(T, secs);
+  }
+  return T;
+}
+
+function buildPlate(p) {
+  const T = [], h = BH;
+  const socket = [[0, 2.95], [0.8, 2.15], [2.6, 2.15], [4.75, 0.25]];
+  const PX = G * p.nx / 2, PY = G * p.ny / 2, EPS = 0.05;
+  for (let ix = 0; ix < p.nx; ix++) for (let iy = 0; iy < p.ny; iy++) {
+    const cx = (ix - (p.nx - 1) / 2) * G, cy = (iy - (p.ny - 1) / 2) * G;
+    const outer = ringSharp(cx, cy, G / 2, G / 2);
+    const ph = (G - CLR) / 2;
+    const rings = socket.map(function (f) { return { z: f[0], R: ring(cx, cy, ph - f[1], ph - f[1], Math.max(0.4, RT - f[1])) }; });
+    const top = rings[rings.length - 1], bot = rings[0];
+    annulus(T, outer, top.R, h, true);
+    annulus(T, outer, bot.R, 0, false);
+    for (let i = 1; i < rings.length; i++) band(T, rings[i - 1].R, rings[i - 1].z, rings[i].R, rings[i].z, true);
+    // perimeter wall, built from this cell's own outer ring so vertices seam exactly
+    for (let i = 0; i < outer.length; i++) {
+      const a = outer[i], b = outer[(i + 1) % outer.length];
+      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      if (Math.abs(Math.abs(mx) - PX) > EPS && Math.abs(Math.abs(my) - PY) > EPS) continue;
+      T.push([[a[0], a[1], 0], [b[0], b[1], 0], [b[0], b[1], h]]);
+      T.push([[a[0], a[1], 0], [b[0], b[1], h], [a[0], a[1], h]]);
+    }
+  }
+  return dropDegenerate(T);
+}
+
+function volumeOf(T) {
+  let v = 0;
+  for (const t of T) {
+    const a = t[0], b = t[1], c = t[2];
+    v += (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6;
+  }
+  return Math.abs(v);
+}
+
+function crcTable() {
+  const t = [];
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+}
+const CRCT = crcTable();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRCT[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zipStore(files) {
+  const enc = new TextEncoder(), parts = [], central = [];
+  let off = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name), data = enc.encode(f.data), crc = crc32(data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(8, 0, true);
+    lh.setUint32(14, crc, true); lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true);
+    lh.setUint16(26, name.length, true);
+    parts.push(new Uint8Array(lh.buffer), name, data);
+    const cd = new DataView(new ArrayBuffer(46));
+    cd.setUint32(0, 0x02014b50, true); cd.setUint16(4, 20, true); cd.setUint16(6, 20, true);
+    cd.setUint32(16, crc, true); cd.setUint32(20, data.length, true); cd.setUint32(24, data.length, true);
+    cd.setUint16(28, name.length, true); cd.setUint32(42, off, true);
+    central.push(new Uint8Array(cd.buffer), name);
+    off += 30 + name.length + data.length;
+  }
+  let cLen = 0;
+  for (const c of central) cLen += c.length;
+  const eo = new DataView(new ArrayBuffer(22));
+  eo.setUint32(0, 0x06054b50, true); eo.setUint16(8, files.length, true); eo.setUint16(10, files.length, true);
+  eo.setUint32(12, cLen, true); eo.setUint32(16, off, true);
+  return new Blob(parts.concat(central, [new Uint8Array(eo.buffer)]), { type: 'application/vnd.ms-package.3dmanufacturing-3dmodel+xml' });
+}
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.mount = React.createRef();
+    const q = new URLSearchParams(location.search);
+    const num = (k, d) => { const v = parseFloat(q.get(k)); return isNaN(v) ? d : v; };
+    const str = (k, d) => q.get(k) || d;
+    const D = DEFAULTS;
+    this.state = {
+      mode: str('mode', D.mode),
+      nx: Math.max(1, Math.round(num('x', D.nx))),
+      ny: Math.max(1, Math.round(num('y', D.ny))),
+      px: Math.max(1, Math.round(num('px', D.px))),
+      py: Math.max(1, Math.round(num('py', D.py))),
+      h: num('h', D.h),
+      wall: num('w', D.wall),
+      lip: q.has('lip') ? (q.get('lip') === '1' ? 'normal' : 'none') : D.lip,
+      efficient: q.has('floor') ? q.get('floor') === 'thin' : D.efficient,
+      scoop: q.has('scoop') ? q.get('scoop') === '1' : D.scoop,
+      label: q.has('label') ? (q.get('label') === 'off' ? 'off' : 'center') : D.label,
+      draft: {},          // half-typed number-box text, keyed by field; committed on Enter / blur
+      presets: [],
+      linkLabel: 'Copy link',
+      vol: 0, tris: 0, error: ''
+    };
+  }
+
+  componentDidMount() {
+    try { this.setState({ presets: JSON.parse(localStorage.getItem('binforge.presets') || '[]') }); } catch (e) { }
+    const wait = () => {
+      if (window.THREE && window.THREE.OrbitControls) this.initGL();
+      else setTimeout(wait, 60);
+    };
+    wait();
+  }
+  componentDidUpdate(prev) {
+    const g = this.gl;
+    if (g && this.mount.current && g.r.domElement.parentNode !== this.mount.current) {
+      this.mount.current.appendChild(g.r.domElement);
+      if (this._ro) this._ro.observe(this.mount.current);
+      this.draw();
+    }
+    if (prev.modelColor !== this.props.modelColor || prev.showGrid !== this.props.showGrid) this.rebuild(false);
+  }
+  componentWillUnmount() { if (this._ro) this._ro.disconnect(); this._dead = true; }
+
+  initGL() {
+    const el = this.mount.current;
+    if (!el || this.gl) return;
+    this._dead = false;
+    el.innerHTML = '';
+    const T = window.THREE;
+    const scene = new T.Scene();
+    scene.background = new T.Color(0x15171b);
+    const cam = new T.PerspectiveCamera(38, 1, 1, 4000);
+    const r = new T.WebGLRenderer({ antialias: true });
+    r.setPixelRatio(Math.min(devicePixelRatio, 2));
+    r.domElement.style.display = 'block';
+    r.domElement.style.width = '100%';
+    r.domElement.style.height = '100%';
+    r.domElement.style.touchAction = 'none';
+    r.domElement.style.cursor = 'grab';
+    r.domElement.addEventListener('pointerdown', () => { r.domElement.style.cursor = 'grabbing'; });
+    window.addEventListener('pointerup', () => { r.domElement.style.cursor = 'grab'; });
+    el.appendChild(r.domElement);
+    const controls = new T.OrbitControls(cam, r.domElement);
+    controls.enableDamping = true; controls.dampingFactor = 0.09;
+    controls.enablePan = true; controls.screenSpacePanning = true;
+    controls.panSpeed = 0.9; controls.rotateSpeed = 0.85; controls.zoomSpeed = 0.9;
+    controls.minDistance = 30; controls.maxDistance = 2200;
+
+    scene.add(new T.HemisphereLight(0xbfd2e8, 0x2a2622, 0.85));
+    const key = new T.DirectionalLight(0xffffff, 0.85); key.position.set(120, 220, 160); scene.add(key);
+    const fill = new T.DirectionalLight(0xffd9a0, 0.35); fill.position.set(-160, 90, -120); scene.add(fill);
+
+    const grid = new T.GridHelper(42 * 20, 20, 0x3a4048, 0x262b31);
+    grid.position.y = -0.02; scene.add(grid);
+
+    this.gl = { T, scene, cam, r, controls, grid, mesh: null, edges: null };
+    window.__forge = this.gl;
+    const resize = () => {
+      const w = el.clientWidth, h = el.clientHeight;
+      if (!w || !h) return;
+      cam.aspect = w / h; cam.updateProjectionMatrix(); r.setSize(w, h);
+    };
+    this._ro = new ResizeObserver(() => { resize(); this.draw(); }); this._ro.observe(el); resize();
+    cam.position.set(120, 105, 150);
+    // render on demand as well as per-frame, so the view stays live even if rAF is throttled
+    controls.addEventListener('change', () => this.draw());
+    r.domElement.addEventListener('webglcontextlost', e => { e.preventDefault(); });
+    r.domElement.addEventListener('webglcontextrestored', () => this.draw());
+    const loop = () => { if (this._dead) return; controls.update(); r.render(scene, cam); requestAnimationFrame(loop); };
+    loop();
+    this.rebuild(true);
+  }
+
+  params() {
+    const s = this.state;
+    if (s.mode === 'plate') return { mode: 'plate', nx: s.px, ny: s.py };
+    const inner = G * s.nx - CLR - 2 * s.wall;
+    return { mode: s.mode, nx: s.nx, ny: s.ny, h: Math.max(9, s.h), wall: s.wall, lip: s.lip === 'normal' ? 'normal' : 'none', efficient: s.efficient, scoop: s.scoop, scoopR: 12, label: s.label, labelW: Math.min(G - CLR, inner * 0.75), labelD: LABEL_D };
+  }
+  tris() {
+    const p = this.params();
+    return p.mode === 'plate' ? buildPlate(p) : buildBin(p);
+  }
+
+  rebuild(fit) {
+    if (!this.gl) return;
+    try { this._rebuild(fit); if (this.state.error) this.setState({ error: '' }); }
+    catch (err) {
+      // stop here, keep the last good model on screen, and report the cause
+      console.error('[Tactix Gridfinity] model rebuild failed:', err, 'params:', this.params());
+      this.setState({ error: 'Error: ' + (err && err.message ? err.message : String(err)) + ' (see browser console, F12)' });
+    }
+  }
+
+  _rebuild(fit) {
+    const T = window.THREE, g = this.gl;
+    const tris = this.tris();
+    const pos = new Float32Array(tris.length * 9);
+    let k = 0;
+    for (const t of tris) for (const v of t) { pos[k++] = v[0]; pos[k++] = v[2]; pos[k++] = -v[1]; }
+    const geo = new T.BufferGeometry();
+    geo.setAttribute('position', new T.BufferAttribute(pos, 3));
+    geo.computeVertexNormals();
+    if (g.mesh) { g.scene.remove(g.mesh); g.mesh.geometry.dispose(); }
+    const mat = new T.MeshStandardMaterial({ color: new T.Color(this.props.modelColor || '#d8dde3'), roughness: 0.62, metalness: 0.02, flatShading: false, side: T.DoubleSide });
+    g.grid.visible = this.props.showGrid !== false;
+    g.mesh = new T.Mesh(geo, mat);
+    g.scene.add(g.mesh);
+    this.setState({ vol: volumeOf(tris), tris: tris.length });
+    if (fit) this.fit();
+    this.draw();
+    this.syncURL();
+  }
+
+  draw() {
+    const g = this.gl;
+    if (g && g.r) g.r.render(g.scene, g.cam);
+  }
+
+  fit() {
+    if (!this.gl || !this.gl.mesh) return;
+    const T = window.THREE, g = this.gl;
+    const box = new T.Box3().setFromObject(g.mesh);
+    const c = box.getCenter(new T.Vector3()), sz = box.getSize(new T.Vector3());
+    const d = Math.max(sz.x, sz.y, sz.z) * 2.0 + 60;
+    g.controls.target.copy(c);
+    g.cam.position.set(c.x + d * 0.5, c.y + d * 0.5, c.z - d * 0.72);
+    g.controls.update();
+  }
+
+  syncURL() {
+    const s = this.state;
+    const q = new URLSearchParams();
+    q.set('mode', s.mode);
+    if (s.mode === 'plate') { q.set('px', s.px); q.set('py', s.py); }
+    else { q.set('x', s.nx); q.set('y', s.ny); }
+    if (s.mode === 'bin') {
+      q.set('h', s.h); q.set('w', s.wall);
+      // written explicitly (not only when on) so shared links stay correct if DEFAULTS change
+      q.set('lip', s.lip === 'normal' ? '1' : '0');
+      q.set('floor', s.efficient ? 'thin' : 'solid');
+      q.set('scoop', s.scoop ? '1' : '0');
+      q.set('label', s.label);
+    }
+    try { history.replaceState(null, '', location.pathname + '?' + q.toString()); } catch (e) { }
+    return q.toString();
+  }
+
+  set(patch, fit) {
+    this.setState(patch, () => this.rebuild(!!fit));
+  }
+
+  name() {
+    const s = this.state;
+    return s.mode === 'plate' ? 'baseplate_' + s.px + 'x' + s.py : 'bin_' + s.nx + 'x' + s.ny + '_' + s.h.toFixed(1) + 'mm';
+  }
+  dl(blob, ext) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = this.name() + ext;
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+
+  renderVals() {
+    const s = this.state, self = this;
+    const seg = (cur, k) => cur === k ? '#e8a34a' : '#22262c';
+    const segf = (cur, k) => cur === k ? '#1a1508' : '#9aa2ab';
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const num = e => parseFloat(e.target.value);
+
+    const lipOn = s.lip === 'normal';
+    const lipDrop = lipOn ? 4.05 + Math.max(0, 2.6 - s.wall) : 0;
+    const floorTop = BH + (s.efficient ? FLOOR_THIN : FLOOR_SOLID);
+    const usable = Math.max(0, s.h - lipDrop - floorTop);
+    const iw = G * s.nx - CLR - 2 * s.wall, id = G * s.ny - CLR - 2 * s.wall;
+    const capacity = iw * id * usable / 1000;
+    const grams = s.vol / 1000 * 1.24;
+
+    const mk = (patch, fit) => () => self.set(patch, fit);
+    const maxUnits = this.props.maxUnits || 8;
+    const lim = k => ({ min: FIELDS[k].min, max: FIELDS[k].max == null ? maxUnits : FIELDS[k].max });
+
+    // ---- number boxes: free typing into a draft, commit (clamped) on Enter / blur, Esc cancels ----
+    const commitField = k => {
+      const raw = s.draft[k];
+      if (raw === undefined) return;
+      const draft = Object.assign({}, s.draft); delete draft[k];
+      let v = parseFloat(raw);
+      if (isNaN(v)) { self.setState({ draft: draft }); return; }       // junk entry: revert to last good value
+      const L = lim(k);
+      v = clamp(FIELDS[k].int ? Math.round(v) : v, L.min, L.max);
+      self.set({ [k]: v, draft: draft }, FIELDS[k].fit);
+    };
+    const f = {};
+    for (const k of Object.keys(FIELDS)) f[k] = {
+      value: s.draft[k] !== undefined ? s.draft[k] : String(s[k]),
+      edit: e => self.setState({ draft: Object.assign({}, s.draft, { [k]: e.target.value }) }),
+      commit: () => commitField(k),
+      key: e => {
+        if (e.key === 'Enter') e.target.blur();
+        else if (e.key === 'Escape') { const d = Object.assign({}, s.draft); delete d[k]; self.setState({ draft: d }, () => e.target.blur()); }
+      }
+    };
+
+    // ---- slider fill (% of track left of the thumb) ----
+    const pct = {};
+    for (const k of ['nx', 'ny', 'h', 'wall']) {
+      const L = lim(k), hi = FIELDS[k].slider || L.max;
+      pct[k] = (hi > L.min ? clamp((s[k] - L.min) / (hi - L.min), 0, 1) * 100 : 0).toFixed(1) + '%';
+    }
+
+    return {
+      f: f, pct: pct,
+      nx: s.nx, ny: s.ny, px: s.px, py: s.py, h: s.h, wall: s.wall, scoop: s.scoop,
+      isBin: s.mode === 'bin',
+      isPlate: s.mode === 'plate',
+      modeBg: { bin: seg(s.mode, 'bin'), plate: seg(s.mode, 'plate') },
+      modeFg: { bin: segf(s.mode, 'bin'), plate: segf(s.mode, 'plate') },
+
+
+      floorTrack: s.efficient ? '#e8a34a' : '#343a42',
+      floorKnob: s.efficient ? 'translateX(16px)' : 'translateX(0px)',
+      scoopTrack: s.scoop ? '#e8a34a' : '#343a42',
+      scoopKnob: s.scoop ? 'translateX(16px)' : 'translateX(0px)',
+      lipTrack: lipOn ? '#e8a34a' : '#343a42',
+      lipKnob: lipOn ? 'translateX(16px)' : 'translateX(0px)',
+      toggleLip: () => self.set({ lip: lipOn ? 'none' : 'normal' }),
+      footprintMm: s.mode === 'plate'
+        ? (G * s.px).toFixed(0) + ' × ' + (G * s.py).toFixed(0) + ' mm'
+        : (G * s.nx - CLR).toFixed(2) + ' × ' + (G * s.ny - CLR).toFixed(2) + ' mm',
+      heightUnits: (s.h / 7).toFixed(2) + ' × 7mm units',
+      wallMm: s.wall.toFixed(2) + ' mm',
+      dimOuter: s.mode === 'plate'
+        ? (G * s.px).toFixed(0) + ' × ' + (G * s.py).toFixed(0) + ' × 4.8'
+        : (G * s.nx - CLR).toFixed(2) + ' × ' + (G * s.ny - CLR).toFixed(2) + ' × ' + s.h.toFixed(2),
+      dimInner: s.mode === 'plate' ? '—' : usable.toFixed(1) + ' mm',
+      dimVol: s.mode === 'plate' ? '—' : capacity.toFixed(1) + ' cm³',
+      dimMass: grams.toFixed(1) + ' g',
+      status: s.error || (s.tris ? s.tris.toLocaleString() + ' triangles' : 'loading…'),
+      linkLabel: s.linkLabel,
+
+      mountRef: this.mount,
+      setModeBin: mk({ mode: 'bin' }, true),
+      setModePlate: mk({ mode: 'plate' }, true),
+      maxUnits: maxUnits,
+      // sliders (number boxes use f.* above)
+      onNx: e => { const v = Math.round(num(e)); if (!isNaN(v)) self.set({ nx: clamp(v, 1, maxUnits) }, true); },
+      onNy: e => { const v = Math.round(num(e)); if (!isNaN(v)) self.set({ ny: clamp(v, 1, maxUnits) }, true); },
+      onH: e => { const v = num(e); if (!isNaN(v)) self.set({ h: clamp(v, FIELDS.h.min, FIELDS.h.max) }); },
+      onWall: e => { const v = num(e); if (!isNaN(v)) self.set({ wall: clamp(v, FIELDS.wall.min, FIELDS.wall.max) }); },
+      snapHalf: mk({ h: TACTIX_HALF_MM }, true), snapFull: mk({ h: TACTIX_FULL_MM }, true),
+      tacBg: { half: Math.abs(s.h - TACTIX_HALF_MM) < 0.01 ? '#e8a34a' : '#22262c', full: Math.abs(s.h - TACTIX_FULL_MM) < 0.01 ? '#e8a34a' : '#22262c' },
+      tacFg: { half: Math.abs(s.h - TACTIX_HALF_MM) < 0.01 ? '#1a1508' : '#9aa2ab', full: Math.abs(s.h - TACTIX_FULL_MM) < 0.01 ? '#1a1508' : '#9aa2ab' },
+      labelTrack: s.label !== 'off' ? '#e8a34a' : '#343a42',
+      labelKnob: s.label !== 'off' ? 'translateX(16px)' : 'translateX(0px)',
+      toggleLabel: () => self.set({ label: s.label === 'off' ? 'center' : 'off' }),
+      toggleFloor: () => self.set({ efficient: !s.efficient }),
+      toggleScoop: () => self.set({ scoop: !s.scoop }),
+      fitView: () => self.fit(),
+      clearAll: () => {
+        if (!window.confirm('Are you sure?\n\nThis will clear all settings back to their defaults\nAND delete all saved presets.')) return;
+        try { localStorage.removeItem('binforge.presets'); }
+        catch (err) { console.error('[Tactix Gridfinity] could not clear saved presets:', err); window.alert('Error: could not clear saved presets.\n' + err.message + '\n(see console, F12)'); }
+        self.set(Object.assign({}, DEFAULTS, { draft: {}, presets: [] }), true);
+      },
+
+      presets: s.presets.map((p, i) => ({
+        name: p.name,
+        load: () => self.setState(Object.assign({}, p.cfg), () => self.rebuild(true)),
+        remove: () => {
+          const next = s.presets.slice(); next.splice(i, 1);
+          localStorage.setItem('binforge.presets', JSON.stringify(next));
+          self.setState({ presets: next });
+        }
+      })),
+      hasPresets: s.presets.length > 0,
+      noPresets: s.presets.length === 0,
+      savePreset: () => {
+        const cfg = self.params();
+        const item = { name: self.name(), cfg: cfg };
+        const next = s.presets.filter(p => p.name !== item.name).concat([item]).slice(-12);
+        localStorage.setItem('binforge.presets', JSON.stringify(next));
+        self.setState({ presets: next });
+      },
+
+      copyLink: () => {
+        const url = SHARE_BASE_URL + '?' + self.syncURL();
+        const flash = label => { self.setState({ linkLabel: label }); setTimeout(() => self.setState({ linkLabel: 'Copy link' }), 1600); };
+        // clipboard needs https or localhost; otherwise show the link so it can be copied by hand
+        const manual = err => { if (err) console.error('[Tactix Gridfinity] clipboard copy failed:', err); window.prompt('Copy this link (Ctrl+C):', url); };
+        if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(url).then(() => flash('Copied'), manual);
+        else manual();
+      },
+
+      exportStl: () => {
+        const tris = self.tris();
+        const buf = new ArrayBuffer(84 + tris.length * 50);
+        const dv = new DataView(buf);
+        dv.setUint32(80, tris.length, true);
+        let o = 84;
+        for (const t of tris) {
+          const a = t[0], b = t[1], c = t[2];
+          const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+          const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+          let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+          const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+          dv.setFloat32(o, nx, true); dv.setFloat32(o + 4, ny, true); dv.setFloat32(o + 8, nz, true); o += 12;
+          for (const v of t) { dv.setFloat32(o, v[0], true); dv.setFloat32(o + 4, v[1], true); dv.setFloat32(o + 8, v[2], true); o += 12; }
+          dv.setUint16(o, 0, true); o += 2;
+        }
+        self.dl(new Blob([buf], { type: 'model/stl' }), '.stl');
+      },
+
+      export3mf: () => {
+        const tris = self.tris();
+        const map = new Map(), verts = [], idx = [];
+        for (const t of tris) {
+          const tri = [];
+          for (const v of t) {
+            const key = v[0].toFixed(4) + ',' + v[1].toFixed(4) + ',' + v[2].toFixed(4);
+            let i = map.get(key);
+            if (i === undefined) { i = verts.length; map.set(key, i); verts.push(v); }
+            tri.push(i);
+          }
+          idx.push(tri);
+        }
+        const vx = verts.map(v => '<vertex x="' + v[0].toFixed(4) + '" y="' + v[1].toFixed(4) + '" z="' + v[2].toFixed(4) + '"/>').join('');
+        const tx = idx.map(t => '<triangle v1="' + t[0] + '" v2="' + t[1] + '" v3="' + t[2] + '"/>').join('');
+        const model = '<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><object id="1" type="model"><mesh><vertices>' + vx + '</vertices><triangles>' + tx + '</triangles></mesh></object></resources><build><item objectid="1"/></build></model>';
+        const ct = '<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>';
+        const rels = '<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>';
+        self.dl(zipStore([
+          { name: '[Content_Types].xml', data: ct },
+          { name: '_rels/.rels', data: rels },
+          { name: '3D/3dmodel.model', data: model }
+        ]), '.3mf');
+      }
+    };
+  }
+}
+
+</script>
+</body>
+</html>
